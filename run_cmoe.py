@@ -1,13 +1,16 @@
+import os 
 import time
-
+import copy
+import argparse
+import json
+import shutil
+from datautils import *
+from tqdm import *
 import torch
 import torch.nn as nn
-
-from tqdm import *
-
-import os 
-
-import copy
+from safetensors.torch import save_file as safe_save_file
+from collections import OrderedDict
+from transformers import AutoTokenizer 
 
 from CMoE_utils import *
 from CMoE_model import *
@@ -17,7 +20,6 @@ from sft_utils import simple_sft
 DEV = torch.device('cuda:0')
 
 def get_llama(model):
-    import torch
     def skip(*args, **kwargs):
         pass
     # torch.nn.init.kaiming_uniform_ = skip
@@ -125,15 +127,15 @@ def cmoe_sequential(model, dataloader, dev, args):
     tick_2 = time.time()
     
 
-    # # LoRa-based Supervised Fine-tuning
-    # for layer in layers:
-    #     layer.mlp.cus_training = True
+    # LoRa-based Supervised Fine-tuning
+    for layer in layers:
+        layer.mlp.cus_training = True
 
-    # model.cuda()
-    # model = simple_sft(model, args, epoch = args.epoch)
+    model.cuda()
+    model = simple_sft(model, args, epoch = args.epoch)
 
-    # for layer in layers:
-    #     layer.mlp.cus_training = False
+    for layer in layers:
+        layer.mlp.cus_training = False
 
     model.eval()
 
@@ -245,10 +247,7 @@ def save_moe_model(model, tokenizer, output_dir, args):
     - config.json (with MoE parameters)
     - model.safetensors (model weights)
     - tokenizer files
-    """
-    import json
-    import shutil
-    
+    """    
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
@@ -280,7 +279,6 @@ def save_moe_model(model, tokenizer, output_dir, args):
         json.dump(config_dict, f, indent=2, ensure_ascii=False)
     
     # Copy modeling_cmoe.py to model directory so it can be imported during loading
-    import shutil
     modeling_file_src = os.path.join(os.path.dirname(__file__), 'modeling_cmoe.py')
     modeling_file_dst = os.path.join(output_dir, 'modeling_cmoe.py')
     if os.path.exists(modeling_file_src):
@@ -300,9 +298,6 @@ def save_moe_model(model, tokenizer, output_dir, args):
     # Save model weights using safetensors format
     print("Saving model weights...")
     try:
-        from safetensors.torch import save_file as safe_save_file
-        from collections import OrderedDict
-        
         # Collect all state dict
         state_dict = model.state_dict()
         
@@ -458,8 +453,6 @@ model = torch.load("{output_dir}/moe_model.pt")
 
 
 if __name__ == '__main__':
-    import argparse
-    from datautils import *
 
     parser = argparse.ArgumentParser()
 
@@ -555,7 +548,6 @@ if __name__ == '__main__':
     print("Runtime of training-free construction: ", rt_construct)
     print("Runtime of fine-tuning construction: ", rt)
 
-    from transformers import AutoTokenizer 
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
     # Save the MoE model if output directory is specified
     if args.output_dir is not None:
